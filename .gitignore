@@ -1,0 +1,7 @@
+~/.config/
+*.json
+view_counts.log
+urls.txt
+urls_full.txt
+__pycache__/
+*.pyc
