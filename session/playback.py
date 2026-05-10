@@ -5,6 +5,40 @@ from typing import Optional
 from dataclasses import dataclass
 
 from utils.fingerprint import SessionFingerprint
+import secrets
+import aiohttp as aiohttp_lib
+
+def generate_cpn() -> str:
+    return secrets.token_hex(8)
+
+async def send_heartbeat(po_token: str, master_data: dict, cpn: str, current_ms: int, video_id: str):
+    payload = {
+        "context": {
+            "client": {"clientName": "WEB", "clientVersion": "2.20240501.00.00"},
+            "user": {}
+        },
+        "cpn": cpn,
+        "state": "PLAYING",
+        "currentMs": current_ms,
+        "totalMsWatched": current_ms,
+        "playbackContext": {"contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS"}},
+        "serviceIntegrityDimensions": {"poToken": po_token},
+        "videoId": video_id
+    }
+    headers = {
+        **master_data.get("headers", {}),
+        "Content-Type": "application/json",
+    }
+    try:
+        async with aiohttp_lib.ClientSession() as s:
+            async with s.post(
+                "https://www.youtube.com/youtubei/v1/stats/playback?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                json=payload, headers=headers, cookies=master_data.get("cookies", {})
+            ) as r:
+                return r.status == 200
+    except Exception:
+        return False
+
 from utils.tls import create_tls_session
 
 
@@ -142,6 +176,13 @@ class LightweightPlaybackSession:
                 continue
             if self.state.position_ms - (self.state.ticks_sent * 10000) >= 10000:
                 await self._send_status_tick()
+                # CPN + heartbeat
+                if not hasattr(self, "_cpn"):
+                    self._cpn = generate_cpn()
+                await send_heartbeat(
+                    self.po_token, self.master, self._cpn,
+                    self.state.position_ms, self.state.content_id
+                )
                 self.state.ticks_sent += 1
             play_time = len(chunk) / bytes_per_ms / 1000
             await asyncio.sleep(play_time * 0.95)
