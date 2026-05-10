@@ -75,6 +75,8 @@ class PlaybackManager:
 
     async def _run_loop(self):
         url_index = 0
+        error_window = []  # последние 20 результатов
+        semaphore = asyncio.Semaphore(10)  # макс параллельных yt-dlp запросов
         while self.running:
             if url_index % 10 == 0:
                 await self.master.refresh_session_data()
@@ -83,11 +85,23 @@ class PlaybackManager:
             session = self.sessions[url_index % len(self.sessions)]
             url = self.urls[url_index % len(self.urls)]
             print(f"[Session {session.id}] ▶ {url[:60]}...")
-            success = await session.init_media(url)
+            async with semaphore:
+                success = await session.init_media(url)
             if success:
+                error_window.append(0)
                 await session.playback_loop()
             else:
-                await asyncio.sleep(5)
+                error_window.append(1)
+                # Auto-scale: при >30% ошибок делаем паузу
+                if len(error_window) >= 10:
+                    error_rate = sum(error_window[-10:]) / 10
+                    if error_rate > 0.3:
+                        wait = min(30, error_rate * 60)
+                        print(f"[AutoScale] Error rate {error_rate:.0%} — пауза {wait:.0f}с")
+                        await asyncio.sleep(wait)
+                    error_window = error_window[-20:]
+                else:
+                    await asyncio.sleep(5)
             url_index += 1
             if url_index % 100 == 0:
                 total_plays = sum(s.session_plays for s in self.sessions)
