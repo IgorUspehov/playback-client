@@ -33,38 +33,24 @@ class LightweightPlaybackSession:
         self.session_plays: int = 0
         self.errors: int = 0
 
-    def _get_audio_url(self, video_id: str):
-        import subprocess
-        try:
-            result = subprocess.run(
-                ['yt-dlp', '-f', 'bestaudio', '--get-url', f'https://www.youtube.com/watch?v={video_id}'],
-                capture_output=True, text=True, timeout=15)
-            url = result.stdout.strip()
-            return url if url and 'googlevideo.com' in url else None
-        except Exception:
-            return None
+    async def _get_audio_url_cached(self, video_id: str):
+        from utils.ytdlp_cache import get_audio_url
+        return await get_audio_url(video_id)
 
-    def _get_duration(self, video_id: str) -> int:
-        import subprocess
-        try:
-            result = subprocess.run(
-                ['yt-dlp', '--print', 'duration', f'https://www.youtube.com/watch?v={video_id}'],
-                capture_output=True, text=True, timeout=10)
-            dur = result.stdout.strip()
-            return int(dur) * 1000 if dur and dur.isdigit() else 180000
-        except Exception:
-            return 180000
+    async def _get_duration_cached(self, video_id: str) -> int:
+        from utils.ytdlp_cache import get_duration
+        return await get_duration(video_id)
 
     async def init_media(self, content_url: str) -> bool:
         content_id = self._extract_id(content_url)
-        stream_url = self._get_audio_url(content_id)
+        stream_url = await self._get_audio_url_cached(content_id)
         if not stream_url:
             self.errors += 1
             return False
         if self.po_token and 'googlevideo.com' in stream_url:
             sep = '&' if '?' in stream_url else '?'
             stream_url = f"{stream_url}{sep}pot={self.po_token}"
-        duration_ms = self._get_duration(content_id)
+        duration_ms = await self._get_duration_cached(content_id)
         self.state = PlaybackState(url=stream_url, content_id=content_id,
                                    duration_ms=duration_ms, started_at=time.time())
         return True
