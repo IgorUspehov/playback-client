@@ -1,0 +1,14 @@
+master:
+  cdp_port: 9222
+  refresh_interval: 300
+
+playback:
+  tick_interval: 10
+  min_playback_ratio: 0.9
+  chunk_size: 262144
+  max_sessions: 99
+  ram_limit_mb: 5000
+
+tls:
+  ja3_pool: "chrome_120_121"
+  alpn: ["h2", "http/1.1"]
