@@ -4,6 +4,30 @@ import signal
 from pathlib import Path
 
 import yaml
+import requests as req_lib_po
+import time as time_po
+
+PO_TOKEN_URL = "http://localhost:4416/get_pot"
+_po_token_cache = {}
+
+def get_po_token(data_sync_id: str) -> str:
+    client_id = data_sync_id.split("||")[0] if "||" in data_sync_id else data_sync_id
+    cached = _po_token_cache.get(client_id)
+    if cached and cached["expires_at"] > time_po.time():
+        return cached["token"]
+    try:
+        resp = req_lib_po.post(PO_TOKEN_URL, json={"content_binding": {"client_id": client_id}}, timeout=10)
+        data = resp.json()
+        token = data.get("poToken", "")
+        if token:
+            _po_token_cache[client_id] = {"token": token, "expires_at": time_po.time() + 11*3600}
+            print(f"[PO Token] Получен: {token[:20]}...")
+            return token
+    except Exception as e:
+        print(f"[PO Token] Ошибка: {e}")
+    return ""
+
+
 
 from master.cdp_client import CDPMasterClient
 from session.playback import LightweightPlaybackSession
@@ -32,11 +56,17 @@ class PlaybackManager:
             return
         await self.master.connect()
         await self.master.refresh_session_data()
+
+        # Получаем PO Token
+        data_sync_id = self.config.get("data_sync_id", "101149169407488805793||")
+        po_token = get_po_token(data_sync_id)
+        print(f"[Manager] PO Token: {po_token[:20] if po_token else "не получен"}...")
+
         max_sessions = self.config["playback"]["max_sessions"]
         for i in range(max_sessions):
             fp = SessionFingerprint()
             session = LightweightPlaybackSession(
-                session_id=i, master_data=self.master.session_data, fingerprint=fp)
+                session_id=i, master_data=self.master.session_data, fingerprint=fp, po_token=po_token)
             self.sessions.append(session)
         print(f"[Manager] Создано {len(self.sessions)} сессий")
         print(f"[Manager] RAM: ~{len(self.sessions) * 34} МБ")
